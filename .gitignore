@@ -1,0 +1,16 @@
+# Node
+node_modules/
+dist/
+.env
+.env.local
+
+# Rust
+target/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Docker
+postgres_data/
