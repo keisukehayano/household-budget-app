@@ -84,41 +84,50 @@ export const TransactionList = ({
                                     <span className="transaction-memo">{transaction.memo}</span>
                                 </div>
 
-                                <div className="transaction-timestamps">
-                                    <span>登録: {formatDateTime(transaction.createdAt)}</span>
-                                    <span>更新: {formatDateTime(transaction.updatedAt)}</span>
-                                </div>
+                                <details className="transaction-details">
+                                    <summary>詳細</summary>
+
+                                    <div className="transaction-timestamps">
+                                        <span>登録: {formatDateTime(transaction.createdAt)}</span>
+                                        <span>更新: {formatDateTime(transaction.updatedAt)}</span>
+                                    </div>
+                                </details>
                             </div>
 
-                            <div className="transaction-card-footer">
+                            <div
+                                className="transaction-card-footer"
+                                aria-label={`${transaction.memo}の操作`}
+                            >
                                 {transaction.status === 'planned' && (
                                     <button
                                         type="button"
                                         className="transaction-confirm-button"
-                                        disabled={isConfirming}
+                                        disabled={isConfirming || isAnyTransactionDeleting}
                                         onClick={() => void onConfirmTransaction(transaction)}
                                     >
                                         {isConfirming ? '確定中...' : '確定する'}
                                     </button>
                                 )}
 
-                                <button
-                                    type="button"
-                                    className="transaction-edit-button"
-                                    disabled={isAnyTransactionDeleting}
-                                    onClick={() => onStartEditTransaction(transaction)}
-                                >
-                                    編集
-                                </button>
+                                <div className="transaction-secondary-actions">
+                                    <button
+                                        type="button"
+                                        className="transaction-edit-button"
+                                        disabled={isAnyTransactionDeleting || isConfirming}
+                                        onClick={() => onStartEditTransaction(transaction)}
+                                    >
+                                        編集
+                                    </button>
 
-                                <button
-                                    type="button"
-                                    className="transaction-delete-button"
-                                    disabled={isAnyTransactionDeleting}
-                                    onClick={() => void onDeleteTransaction(transaction.id)}
-                                >
-                                    {isDeleting ? '削除中...' : '削除'}
-                                </button>
+                                    <button
+                                        type="button"
+                                        className="transaction-delete-button"
+                                        disabled={isAnyTransactionDeleting || isConfirming}
+                                        onClick={() => void onDeleteTransaction(transaction.id)}
+                                    >
+                                        {isDeleting ? '削除中...' : '削除'}
+                                    </button>
+                                </div>
                             </div>
                         </li>
                     );
