@@ -171,6 +171,18 @@ select:disabled {
    Controls
 ========================= */
 
+.mobile-filter-panel {
+    display: none;
+}
+
+.mobile-filter-toggle-button {
+    display: none;
+}
+
+.mobile-filter-summary {
+    display: none;
+}
+
 .transaction-status-filter,
 .transaction-filter,
 .transaction-search,
@@ -437,7 +449,32 @@ select:disabled {
     font-size: 12px;
 }
 
+.transaction-details {
+    display: grid;
+    gap: 6px;
+    color: #666;
+    font-size: 12px;
+}
+
+.transaction-details summary {
+    width: fit-content;
+    color: #555;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.transaction-details summary:hover {
+    color: #1565c0;
+}
+
 .transaction-card-footer {
+    display: grid;
+    gap: 8px;
+    justify-content: stretch;
+}
+
+.transaction-secondary-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
@@ -446,9 +483,11 @@ select:disabled {
 .transaction-confirm-button,
 .transaction-edit-button,
 .transaction-delete-button {
+    min-height: 40px;
     padding: 8px 12px;
     border-radius: 8px;
     background: #fff;
+    font-weight: 700;
     cursor: pointer;
 }
 
@@ -602,8 +641,58 @@ select:disabled {
         gap: 16px;
     }
 
+    .mobile-filter-panel {
+        display: grid;
+        gap: 8px;
+    }
+
+    .mobile-filter-toggle-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: #1565c0;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .mobile-filter-toggle-button:hover {
+        background: #0d47a1;
+    }
+
+    .mobile-filter-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .mobile-filter-summary span {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        padding: 4px 8px;
+        border: 1px solid #ddd;
+        border-radius: 999px;
+        background: #fff;
+        color: #555;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
     .transactions-controls {
         gap: 10px;
+    }
+
+    .transactions-controls.is-closed {
+        display: none;
+    }
+
+    .transactions-controls.is-open {
+        display: grid;
     }
 
     .transactions-dashboard {
@@ -763,20 +852,28 @@ select:disabled {
         font-size: 11px;
     }
 
+    .transaction-details {
+        border-top: 1px solid #eee;
+        padding-top: 8px;
+    }
+
     .transaction-card-footer {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .transaction-secondary-actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 8px;
     }
 
     .transaction-confirm-button {
-        grid-column: 1 / -1;
+        width: 100%;
     }
 
-    .transaction-card-footer button,
-    .transaction-confirm-button,
-    .transaction-edit-button,
-    .transaction-delete-button {
+    .transaction-secondary-actions button {
         width: 100%;
         min-height: 44px;
         font-size: 15px;
@@ -804,5 +901,74 @@ select:disabled {
     .empty-message {
         padding: 12px;
         font-size: 14px;
+    }
+}
+
+/* =========================
+   Mobile Form Toggle
+========================= */
+
+.mobile-form-close-button,
+.mobile-add-transaction-button {
+    display: none;
+}
+
+@media (max-width: 600px) {
+    .app {
+        padding-bottom: 104px;
+    }
+
+    .transactions-form-area.is-closed {
+        display: none;
+    }
+
+    .transactions-form-area.is-open {
+        display: grid;
+        gap: 8px;
+    }
+
+    .mobile-form-close-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        justify-self: end;
+        min-height: 40px;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 999px;
+        background: #fff;
+        color: #333;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .mobile-form-close-button:hover {
+        background: #f5f5f5;
+    }
+
+    .mobile-add-transaction-button {
+        position: fixed;
+        right: 16px;
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        left: 16px;
+        z-index: 50;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 52px;
+        padding: 14px 18px;
+        border: none;
+        border-radius: 999px;
+        background: #1565c0;
+        color: #fff;
+        font-size: 16px;
+        font-weight: 700;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+        cursor: pointer;
+    }
+
+    .mobile-add-transaction-button:hover {
+        background: #0d47a1;
     }
 }

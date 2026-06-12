@@ -22,6 +22,7 @@ import type {
     TransactionStatusFilter as TransactionStatusFilterType,
     TransactionSummary,
 } from '../types';
+import { transactionStatusFilterLabels } from '../types';
 import type { TransactionSortOrder } from '../utils/sortTransactions';
 import { getTodayDateString } from '../utils/transactionValidation';
 import { useDebouncedValue } from '../../../shared/hooks/useDebouncedValue';
@@ -33,6 +34,13 @@ const emptyTransactionSummary: TransactionSummary = {
     totalExpense: 0,
     balance: 0,
     categorySummaries: [],
+};
+
+const sortOrderLabels: Record<TransactionSortOrder, string> = {
+    'date-desc': '日付が新しい順',
+    'date-asc': '日付が古い順',
+    'amount-desc': '金額が高い順',
+    'amount-asc': '金額が低い順',
 };
 
 export const TransactionsPage = () => {
@@ -47,6 +55,8 @@ export const TransactionsPage = () => {
     const [currentPage, setCurrentPage] = useState(1);
 
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [formVersion, setFormVersion] = useState(0);
 
     const [isLoading, setIsLoading] = useState(true);
     const [isFetching, setIsFetching] = useState(false);
@@ -58,9 +68,12 @@ export const TransactionsPage = () => {
     const [errorMessage, setErrorMessage] = useState('');
 
     const [selectedStatus, setSelectedStatus] = useState<TransactionStatusFilterType>('all');
+    const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
     const debouncedSearchQuery = useDebouncedValue(searchQuery, 500);
     const isSearchPending = searchQuery !== debouncedSearchQuery;
+    const selectedMonthLabel = selectedMonth || '全期間';
+    const searchQueryLabel = searchQuery.trim() ? `検索: ${searchQuery.trim()}` : '検索なし';
 
     useEffect(() => {
         let isActive = true;
@@ -170,6 +183,27 @@ export const TransactionsPage = () => {
         setReloadKey((currentReloadKey) => currentReloadKey + 1);
     };
 
+    const scrollToTransactionForm = () => {
+        window.requestAnimationFrame(() => {
+            document
+                .querySelector<HTMLElement>('.transactions-form-area')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    };
+
+    const handleOpenNewTransactionForm = () => {
+        setEditingTransaction(null);
+        setFormVersion((currentFormVersion) => currentFormVersion + 1);
+        setIsFormOpen(true);
+        scrollToTransactionForm();
+    };
+
+    const handleCloseTransactionForm = () => {
+        setEditingTransaction(null);
+        setIsFormOpen(false);
+        setFormVersion((currentFormVersion) => currentFormVersion + 1);
+    };
+
     const handleChangeMonth = (month: string) => {
         setSelectedMonth(month);
         setCurrentPage(1);
@@ -207,6 +241,8 @@ export const TransactionsPage = () => {
             setSearchQuery('');
             setSortOrder('date-desc');
             setCurrentPage(1);
+            setIsFormOpen(false);
+            setFormVersion((currentFormVersion) => currentFormVersion + 1);
             reloadTransactions();
         } catch (error) {
             console.error(error);
@@ -229,6 +265,8 @@ export const TransactionsPage = () => {
             setSelectedMonth(savedTransaction.date.slice(0, 7));
             setSearchQuery('');
             setCurrentPage(1);
+            setIsFormOpen(false);
+            setFormVersion((currentFormVersion) => currentFormVersion + 1);
             reloadTransactions();
         } catch (error) {
             console.error(error);
@@ -241,11 +279,12 @@ export const TransactionsPage = () => {
 
     const handleStartEditTransaction = (transaction: Transaction) => {
         setEditingTransaction(transaction);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsFormOpen(true);
+        scrollToTransactionForm();
     };
 
     const handleCancelEdit = () => {
-        setEditingTransaction(null);
+        handleCloseTransactionForm();
     };
 
     const handleDeleteTransaction = async (id: string): Promise<void> => {
@@ -342,7 +381,29 @@ export const TransactionsPage = () => {
                 </p>
             )}
 
-            <section className="transactions-controls">
+            <div className="mobile-filter-panel">
+                <button
+                    type="button"
+                    className="mobile-filter-toggle-button"
+                    aria-expanded={isFiltersOpen}
+                    aria-controls="transactions-controls"
+                    onClick={() => setIsFiltersOpen((currentValue) => !currentValue)}
+                >
+                    {isFiltersOpen ? 'フィルターを閉じる' : 'フィルターを開く'}
+                </button>
+
+                <div className="mobile-filter-summary">
+                    <span>{transactionStatusFilterLabels[selectedStatus]}</span>
+                    <span>{selectedMonthLabel}</span>
+                    <span>{searchQueryLabel}</span>
+                    <span>{sortOrderLabels[sortOrder]}</span>
+                </div>
+            </div>
+
+            <section
+                id="transactions-controls"
+                className={`transactions-controls ${isFiltersOpen ? 'is-open' : 'is-closed'}`}
+            >
                 <TransactionStatusFilter
                     selectedStatus={selectedStatus}
                     onChangeStatus={handleChangeStatus}
@@ -373,9 +434,20 @@ export const TransactionsPage = () => {
             </section>
 
             <section className="transactions-main">
-                <div className="transactions-form-area">
+                <div
+                    className={`transactions-form-area ${isFormOpen ? 'is-open' : 'is-closed'}`}
+                >
+                    <button
+                        type="button"
+                        className="mobile-form-close-button"
+                        onClick={handleCloseTransactionForm}
+                        disabled={isFormSubmitting}
+                    >
+                        閉じる
+                    </button>
+
                     <TransactionForm
-                        key={editingTransaction?.id ?? 'new-transaction'}
+                        key={`${editingTransaction?.id ?? 'new-transaction'}-${formVersion}`}
                         onAddTransaction={handleAddTransaction}
                         editingTransaction={editingTransaction}
                         onUpdateTransaction={handleUpdateTransaction}
@@ -401,6 +473,16 @@ export const TransactionsPage = () => {
                     />
                 </div>
             </section>
+
+            {!isFormOpen && (
+                <button
+                    type="button"
+                    className="mobile-add-transaction-button"
+                    onClick={handleOpenNewTransactionForm}
+                >
+                    ＋ 取引を登録
+                </button>
+            )}
         </div>
     );
 };
