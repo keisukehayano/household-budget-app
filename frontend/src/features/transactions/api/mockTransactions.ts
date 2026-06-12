@@ -1,0 +1,48 @@
+import type { Transaction } from '../types';
+
+export const mockTransactions: Transaction[] = [
+    {
+        id: '1',
+        type: 'expense',
+        date: '2026-06-11',
+        category: 'food',
+        amount: 1200,
+        memo: '昼食',
+        status: 'confirmed',
+        createdAt: '2026-06-11T03:00:00.000Z',
+        updatedAt: '2026-06-11T03:00:00.000Z',
+    },
+    {
+        id: '2',
+        type: 'expense',
+        date: '2026-06-10',
+        category: 'transport',
+        amount: 580,
+        memo: '電車代',
+        status: 'confirmed',
+        createdAt: '2026-06-10T09:00:00.000Z',
+        updatedAt: '2026-06-10T09:00:00.000Z',
+    },
+    {
+        id: '3',
+        type: 'income',
+        date: '2026-06-25',
+        category: 'salary',
+        amount: 250000,
+        memo: '給与',
+        status: 'confirmed',
+        createdAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:00.000Z',
+    },
+    {
+        id: '4',
+        type: 'expense',
+        date: '2026-06-09',
+        category: 'daily',
+        amount: 980,
+        memo: '洗剤・日用品',
+        status: 'confirmed',
+        createdAt: '2026-06-09T10:00:00.000Z',
+        updatedAt: '2026-06-09T10:00:00.000Z',
+    },
+];

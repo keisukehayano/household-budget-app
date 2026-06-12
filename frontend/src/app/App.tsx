@@ -1,8 +1,13 @@
-import { RouterProvider } from "react-router"
-import { router } from "./router"
+import '../App.css';
+import { TransactionsPage } from '../features/transactions';
 
 function App() {
-  return <RouterProvider router={router} />;
+    return (
+        <main className="app">
+            <h1>家計簿アプリ</h1>
+            <TransactionsPage />
+        </main>
+    );
 }
 
-export default App
+export default App;
