@@ -13,13 +13,13 @@ export const sortTransactions = (
             return copiedTransactions.sort((a, b) => b.date.localeCompare(a.date));
 
         case 'amount-asc':
-            return copiedTransactions.sort((a, b) => a.date.localeCompare(b.date));
+            return copiedTransactions.sort((a, b) => a.amount - b.amount);
 
         case 'amount-desc':
             return copiedTransactions.sort((a, b) => b.amount - a.amount);
 
         case 'date-asc':
-            return copiedTransactions.sort((a, b) => a.amount - b.amount);
+            return copiedTransactions.sort((a, b) => a.date.localeCompare(b.date));
 
         default:
             return copiedTransactions;
