@@ -14,18 +14,19 @@ use crate::{
 
 pub async fn list_transactions(
     db: &PgPool,
+    user_id: Uuid,
     query: TransactionListQuery,
 ) -> Result<TransactionListResponse, ApiError> {
     let filter = TransactionListFilter::from_query(query).map_err(ApiError::bad_request)?;
 
-    let total = transaction_repository::count_transactions(db, &filter)
+    let total = transaction_repository::count_transactions(db, user_id, &filter)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to count transactions");
             ApiError::internal_server_error()
         })?;
 
-    let items = transaction_repository::find_transactions(db, &filter)
+    let items = transaction_repository::find_transactions(db, user_id, &filter)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to fetch transactions");
@@ -42,11 +43,12 @@ pub async fn list_transactions(
 
 pub async fn summarize_transactions(
     db: &PgPool,
+    user_id: Uuid,
     query: TransactionListQuery,
 ) -> Result<TransactionSummaryResponse, ApiError> {
     let filter = TransactionListFilter::from_summary_query(query).map_err(ApiError::bad_request)?;
 
-    transaction_repository::summarize_transactions(db, &filter)
+    transaction_repository::summarize_transactions(db, user_id, &filter)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to summarize transaction");
@@ -56,6 +58,7 @@ pub async fn summarize_transactions(
 
 pub async fn create_transaction(
     db: &PgPool,
+    user_id: Uuid,
     payload: TransactionCreateRequest,
 ) -> Result<TransactionResponse, ApiError> {
     let input = validate_and_build_transaction_input(
@@ -70,7 +73,7 @@ pub async fn create_transaction(
 
     let id = Uuid::new_v4();
 
-    transaction_repository::create_transaction(db, id, input)
+    transaction_repository::create_transaction(db, user_id, id, input)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to create transaction");
@@ -80,6 +83,7 @@ pub async fn create_transaction(
 
 pub async fn update_transaction(
     db: &PgPool,
+    user_id: Uuid,
     id: Uuid,
     payload: TransactionUpdateRequest,
 ) -> Result<TransactionResponse, ApiError> {
@@ -93,7 +97,7 @@ pub async fn update_transaction(
     )
     .map_err(ApiError::bad_request)?;
 
-    let transaction = transaction_repository::update_transaction(db, id, input)
+    let transaction = transaction_repository::update_transaction(db, user_id, id, input)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to update transaction");
@@ -106,8 +110,8 @@ pub async fn update_transaction(
     }
 }
 
-pub async fn delete_transaction(db: &PgPool, id: Uuid) -> Result<(), ApiError> {
-    let rows_affected = transaction_repository::delete_transaction(db, id)
+pub async fn delete_transaction(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<(), ApiError> {
+    let rows_affected = transaction_repository::delete_transaction(db, user_id, id)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to delete transaction");
@@ -127,8 +131,11 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use crate::models::transaction::{
-        TransactionCreateRequest, TransactionListQuery, TransactionUpdateRequest,
+    use crate::{
+        models::transaction::{
+            TransactionCreateRequest, TransactionListQuery, TransactionUpdateRequest,
+        },
+        repositories::user as user_repository,
     };
 
     fn create_request(
@@ -185,8 +192,16 @@ mod tests {
         }
     }
 
+    async fn create_test_user(pool: &PgPool, email: &str) -> Uuid {
+        user_repository::create_user(pool, Uuid::new_v4(), email, "dummy-password-hash")
+            .await
+            .expect("test user should be created")
+            .id
+    }
+
     async fn seed_transaction(
         pool: &PgPool,
+        user_id: Uuid,
         transaction_type: &str,
         date: &str,
         category: &str,
@@ -195,6 +210,7 @@ mod tests {
     ) -> Uuid {
         let transaction = create_transaction(
             pool,
+            user_id,
             create_request(transaction_type, date, category, amount, memo, "confirmed"),
         )
         .await
@@ -205,8 +221,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn create_transaction_accepts_valid_payload(pool: PgPool) {
+        let user_id = create_test_user(&pool, "service-create@example.com").await;
         let transaction = create_transaction(
             &pool,
+            user_id,
             create_request("expense", "2024-06-11", "food", 1200, "昼食", "confirmed"),
         )
         .await
@@ -221,8 +239,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn create_transaction_rejects_invalid_payload(pool: PgPool) {
+        let user_id = create_test_user(&pool, "service-invalid@example.com").await;
         let result = create_transaction(
             &pool,
+            user_id,
             create_request("invalid", "2024-06-11", "unknown", 0, "", "confirmed"),
         )
         .await;
@@ -232,13 +252,62 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn list_transactions_returns_paginated_response(pool: PgPool) {
-        seed_transaction(&pool, "expense", "2024-06-11", "food", 1200, "昼食").await;
-        seed_transaction(&pool, "expense", "2024-06-12", "transport", 580, "電車代").await;
-        seed_transaction(&pool, "income", "2024-06-25", "salary", 250000, "給与").await;
-        seed_transaction(&pool, "expense", "2024-07-01", "food", 900, "7月の昼食").await;
+        let user_id = create_test_user(&pool, "service-list@example.com").await;
+        let other_user_id = create_test_user(&pool, "service-list-other@example.com").await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-11",
+            "food",
+            1200,
+            "昼食",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-12",
+            "transport",
+            580,
+            "電車代",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "income",
+            "2024-06-25",
+            "salary",
+            250000,
+            "給与",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-07-01",
+            "food",
+            900,
+            "7月の昼食",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            other_user_id,
+            "expense",
+            "2024-06-20",
+            "food",
+            777,
+            "別ユーザー",
+        )
+        .await;
 
         let response = list_transactions(
             &pool,
+            user_id,
             list_query(
                 Some("2024-06"),
                 Some("支出"),
@@ -263,6 +332,7 @@ mod tests {
 
         let second_page_response = list_transactions(
             &pool,
+            user_id,
             list_query(
                 Some("2024-06"),
                 Some("支出"),
@@ -286,8 +356,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn list_transactions_rejects_invalid_query(pool: PgPool) {
+        let user_id = create_test_user(&pool, "service-query@example.com").await;
         let result = list_transactions(
             &pool,
+            user_id,
             list_query(
                 Some("2024/06"),
                 None,
@@ -304,14 +376,63 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn summarize_transactions_uses_all_matching_rows_not_current_page_only(pool: PgPool) {
-        seed_transaction(&pool, "income", "2024-06-25", "salary", 250000, "給与").await;
-        seed_transaction(&pool, "expense", "2024-06-11", "food", 1200, "昼食").await;
-        seed_transaction(&pool, "expense", "2024-06-12", "food", 800, "夕食").await;
-        seed_transaction(&pool, "expense", "2024-06-13", "daily", 980, "日用品").await;
-        seed_transaction(&pool, "expense", "2024-07-01", "food", 900, "7月の昼食").await;
+        let user_id = create_test_user(&pool, "service-summary@example.com").await;
+        let other_user_id = create_test_user(&pool, "service-summary-other@example.com").await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "income",
+            "2024-06-25",
+            "salary",
+            250000,
+            "給与",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-11",
+            "food",
+            1200,
+            "昼食",
+        )
+        .await;
+        seed_transaction(&pool, user_id, "expense", "2024-06-12", "food", 800, "夕食").await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-13",
+            "daily",
+            980,
+            "日用品",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-07-01",
+            "food",
+            900,
+            "7月の昼食",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            other_user_id,
+            "expense",
+            "2024-06-15",
+            "food",
+            999,
+            "別ユーザー",
+        )
+        .await;
 
         let summary = summarize_transactions(
             &pool,
+            user_id,
             list_query(
                 Some("2024-06"),
                 None,
@@ -354,12 +475,41 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn summarize_transactions_applies_search_condition(pool: PgPool) {
-        seed_transaction(&pool, "expense", "2024-06-11", "food", 1200, "昼食").await;
-        seed_transaction(&pool, "expense", "2024-06-12", "transport", 580, "電車代").await;
-        seed_transaction(&pool, "income", "2024-06-25", "salary", 250000, "給与").await;
+        let user_id = create_test_user(&pool, "service-search@example.com").await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-11",
+            "food",
+            1200,
+            "昼食",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-12",
+            "transport",
+            580,
+            "電車代",
+        )
+        .await;
+        seed_transaction(
+            &pool,
+            user_id,
+            "income",
+            "2024-06-25",
+            "salary",
+            250000,
+            "給与",
+        )
+        .await;
 
         let summary = summarize_transactions(
             &pool,
+            user_id,
             list_query(Some("2024-06"), Some("食費"), None, None, None, None),
         )
         .await
@@ -375,10 +525,21 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn update_transaction_updates_existing_transaction(pool: PgPool) {
-        let id = seed_transaction(&pool, "expense", "2024-06-11", "food", 1200, "昼食").await;
+        let user_id = create_test_user(&pool, "service-update@example.com").await;
+        let id = seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-11",
+            "food",
+            1200,
+            "昼食",
+        )
+        .await;
 
         let updated_transaction = update_transaction(
             &pool,
+            user_id,
             id,
             update_request(
                 "expense",
@@ -402,10 +563,21 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn update_transaction_rejects_invalid_payload(pool: PgPool) {
-        let id = seed_transaction(&pool, "expense", "2024-06-11", "food", 1200, "昼食").await;
+        let user_id = create_test_user(&pool, "service-update-invalid@example.com").await;
+        let id = seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-11",
+            "food",
+            1200,
+            "昼食",
+        )
+        .await;
 
         let result = update_transaction(
             &pool,
+            user_id,
             id,
             update_request("invalid", "2024-06-12", "unknown", 0, "", "confirmed"),
         )
@@ -416,8 +588,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn update_transaction_returns_error_when_transaction_does_not_exist(pool: PgPool) {
+        let user_id = create_test_user(&pool, "service-update-missing@example.com").await;
         let result = update_transaction(
             &pool,
+            user_id,
             Uuid::new_v4(),
             update_request(
                 "expense",
@@ -435,14 +609,25 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn delete_transaction_deletes_existing_transaction(pool: PgPool) {
-        let id = seed_transaction(&pool, "expense", "2024-06-11", "food", 1200, "昼食").await;
+        let user_id = create_test_user(&pool, "service-delete@example.com").await;
+        let id = seed_transaction(
+            &pool,
+            user_id,
+            "expense",
+            "2024-06-11",
+            "food",
+            1200,
+            "昼食",
+        )
+        .await;
 
-        delete_transaction(&pool, id)
+        delete_transaction(&pool, user_id, id)
             .await
             .expect("transaction should be deleted");
 
         let response = list_transactions(
             &pool,
+            user_id,
             list_query(None, None, Some("date-desc"), Some("1"), Some("10"), None),
         )
         .await
@@ -454,7 +639,8 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn delete_transaction_returns_error_when_transaction_does_not_exist(pool: PgPool) {
-        let result = delete_transaction(&pool, Uuid::new_v4()).await;
+        let user_id = create_test_user(&pool, "service-delete-missing@example.com").await;
+        let result = delete_transaction(&pool, user_id, Uuid::new_v4()).await;
 
         assert!(result.is_err());
     }

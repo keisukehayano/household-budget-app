@@ -9,6 +9,7 @@ use crate::models::transaction::{
 
 pub async fn find_transactions(
     db: &PgPool,
+    user_id: Uuid,
     filter: &TransactionListFilter,
 ) -> Result<Vec<TransactionResponse>, sqlx::Error> {
     let mut builder = QueryBuilder::<Postgres>::new(
@@ -28,6 +29,7 @@ pub async fn find_transactions(
     );
 
     let mut has_condition = false;
+    push_user_condition(&mut builder, user_id, &mut has_condition);
     push_filter_conditions(&mut builder, filter, &mut has_condition)?;
 
     push_sort_order(&mut builder, filter.sort_order);
@@ -46,6 +48,7 @@ pub async fn find_transactions(
 
 pub async fn count_transactions(
     db: &PgPool,
+    user_id: Uuid,
     filter: &TransactionListFilter,
 ) -> Result<i64, sqlx::Error> {
     let mut builder = QueryBuilder::<Postgres>::new(
@@ -56,6 +59,7 @@ pub async fn count_transactions(
     );
 
     let mut has_condition = false;
+    push_user_condition(&mut builder, user_id, &mut has_condition);
     push_filter_conditions(&mut builder, filter, &mut has_condition)?;
 
     builder.build_query_scalar::<i64>().fetch_one(db).await
@@ -63,10 +67,11 @@ pub async fn count_transactions(
 
 pub async fn summarize_transactions(
     db: &PgPool,
+    user_id: Uuid,
     filter: &TransactionListFilter,
 ) -> Result<TransactionSummaryResponse, sqlx::Error> {
-    let total_summary = find_total_summary(db, filter).await?;
-    let category_summaries = find_category_summaries(db, filter).await?;
+    let total_summary = find_total_summary(db, user_id, filter).await?;
+    let category_summaries = find_category_summaries(db, user_id, filter).await?;
 
     Ok(TransactionSummaryResponse::new(
         total_summary.total_income,
@@ -77,6 +82,7 @@ pub async fn summarize_transactions(
 
 async fn find_total_summary(
     db: &PgPool,
+    user_id: Uuid,
     filter: &TransactionListFilter,
 ) -> Result<TransactionTotalSummaryRow, sqlx::Error> {
     let mut builder = QueryBuilder::<Postgres>::new(
@@ -105,6 +111,7 @@ async fn find_total_summary(
     );
 
     let mut has_condition = false;
+    push_user_condition(&mut builder, user_id, &mut has_condition);
     push_filter_conditions(&mut builder, filter, &mut has_condition)?;
 
     builder
@@ -115,6 +122,7 @@ async fn find_total_summary(
 
 async fn find_category_summaries(
     db: &PgPool,
+    user_id: Uuid,
     filter: &TransactionListFilter,
 ) -> Result<Vec<TransactionCategorySummaryResponse>, sqlx::Error> {
     let mut builder = QueryBuilder::<Postgres>::new(
@@ -127,6 +135,7 @@ async fn find_category_summaries(
     );
 
     let mut has_condition = false;
+    push_user_condition(&mut builder, user_id, &mut has_condition);
     push_filter_conditions(&mut builder, filter, &mut has_condition)?;
 
     push_where_or_and(&mut builder, &mut has_condition);
@@ -142,6 +151,7 @@ async fn find_category_summaries(
 
 pub async fn create_transaction(
     db: &PgPool,
+    user_id: Uuid,
     id: Uuid,
     input: TransactionInput,
 ) -> Result<TransactionResponse, sqlx::Error> {
@@ -149,6 +159,7 @@ pub async fn create_transaction(
         r#"
         insert into transactions (
             id,
+            user_id,
             transaction_type,
             date,
             category,
@@ -156,7 +167,7 @@ pub async fn create_transaction(
             memo,
             status
         )
-        values ($1, $2, $3, $4, $5, $6, $7)
+        values ($1, $2, $3, $4, $5, $6, $7, $8)
         returning
             id,
             transaction_type,
@@ -170,6 +181,7 @@ pub async fn create_transaction(
         "#,
     )
     .bind(id)
+    .bind(user_id)
     .bind(input.transaction_type.as_str())
     .bind(input.date)
     .bind(input.category.as_str())
@@ -182,6 +194,7 @@ pub async fn create_transaction(
 
 pub async fn update_transaction(
     db: &PgPool,
+    user_id: Uuid,
     id: Uuid,
     input: TransactionInput,
 ) -> Result<Option<TransactionResponse>, sqlx::Error> {
@@ -197,6 +210,7 @@ pub async fn update_transaction(
             status = $6,
             updated_at = now()
         where id = $7
+          and user_id = $8
         returning
             id,
             transaction_type,
@@ -216,22 +230,34 @@ pub async fn update_transaction(
     .bind(input.memo)
     .bind(input.status.as_str())
     .bind(id)
+    .bind(user_id)
     .fetch_optional(db)
     .await
 }
 
-pub async fn delete_transaction(db: &PgPool, id: Uuid) -> Result<u64, sqlx::Error> {
+pub async fn delete_transaction(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         r#"
         delete from transactions
         where id = $1
+          and user_id = $2
         "#,
     )
     .bind(id)
+    .bind(user_id)
     .execute(db)
     .await?;
 
     Ok(result.rows_affected())
+}
+
+fn push_user_condition(
+    builder: &mut QueryBuilder<Postgres>,
+    user_id: Uuid,
+    has_condition: &mut bool,
+) {
+    push_where_or_and(builder, has_condition);
+    builder.push("user_id = ").push_bind(user_id);
 }
 
 fn push_filter_conditions(
@@ -354,9 +380,12 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use crate::models::transaction::{
-        TransactionCategory, TransactionInput, TransactionListFilter, TransactionSortOrder,
-        TransactionStatus, TransactionStatusFilter, TransactionType, YearMonth,
+    use crate::{
+        models::transaction::{
+            TransactionCategory, TransactionInput, TransactionListFilter, TransactionSortOrder,
+            TransactionStatus, TransactionStatusFilter, TransactionType, YearMonth,
+        },
+        repositories::user as user_repository,
     };
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
@@ -406,13 +435,21 @@ mod tests {
         }
     }
 
+    async fn create_test_user(pool: &PgPool, email: &str) -> Uuid {
+        user_repository::create_user(pool, Uuid::new_v4(), email, "dummy-password-hash")
+            .await
+            .expect("test user should be created")
+            .id
+    }
+
     async fn insert_test_transaction(
         pool: &PgPool,
+        user_id: Uuid,
         input: TransactionInput,
     ) -> Result<Uuid, sqlx::Error> {
         let id = Uuid::new_v4();
 
-        create_transaction(pool, id, input).await?;
+        create_transaction(pool, user_id, id, input).await?;
 
         Ok(id)
     }
@@ -421,10 +458,12 @@ mod tests {
     async fn create_transaction_inserts_row_and_returns_timestamps(
         pool: PgPool,
     ) -> Result<(), sqlx::Error> {
+        let user_id = create_test_user(&pool, "repo-create@example.com").await;
         let id = Uuid::new_v4();
 
         let transaction = create_transaction(
             &pool,
+            user_id,
             id,
             expense_input(date(2026, 6, 11), TransactionCategory::Food, 1200, "昼食"),
         )
@@ -445,14 +484,18 @@ mod tests {
     async fn find_transactions_applies_month_search_sort_and_pagination(
         pool: PgPool,
     ) -> Result<(), sqlx::Error> {
+        let user_id = create_test_user(&pool, "repo-find@example.com").await;
+        let other_user_id = create_test_user(&pool, "repo-find-other@example.com").await;
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(date(2026, 6, 11), TransactionCategory::Food, 1200, "昼食"),
         )
         .await?;
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(
                 date(2026, 6, 12),
                 TransactionCategory::Transport,
@@ -464,6 +507,7 @@ mod tests {
 
         insert_test_transaction(
             &pool,
+            user_id,
             income_input(
                 date(2026, 6, 25),
                 TransactionCategory::Salary,
@@ -475,11 +519,24 @@ mod tests {
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(
                 date(2026, 7, 1),
                 TransactionCategory::Food,
                 900,
                 "7月の昼食",
+            ),
+        )
+        .await?;
+
+        insert_test_transaction(
+            &pool,
+            other_user_id,
+            expense_input(
+                date(2026, 6, 15),
+                TransactionCategory::Food,
+                999,
+                "別ユーザー",
             ),
         )
         .await?;
@@ -496,7 +553,7 @@ mod tests {
             status_filter: TransactionStatusFilter::All,
         };
 
-        let transactions = find_transactions(&pool, &filter).await?;
+        let transactions = find_transactions(&pool, user_id, &filter).await?;
 
         assert_eq!(transactions.len(), 1);
         assert_eq!(transactions[0].memo, "電車代");
@@ -504,7 +561,8 @@ mod tests {
 
         let second_page_filter = TransactionListFilter { page: 2, ..filter };
 
-        let second_page_transactions = find_transactions(&pool, &second_page_filter).await?;
+        let second_page_transactions =
+            find_transactions(&pool, user_id, &second_page_filter).await?;
 
         assert_eq!(second_page_transactions.len(), 1);
         assert_eq!(second_page_transactions[0].memo, "昼食");
@@ -515,14 +573,17 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn count_transactions_applies_filter_conditions(pool: PgPool) -> Result<(), sqlx::Error> {
+        let user_id = create_test_user(&pool, "repo-count@example.com").await;
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(date(2026, 6, 11), TransactionCategory::Food, 1200, "昼食"),
         )
         .await?;
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(
                 date(2026, 6, 12),
                 TransactionCategory::Transport,
@@ -534,6 +595,7 @@ mod tests {
 
         insert_test_transaction(
             &pool,
+            user_id,
             income_input(
                 date(2026, 6, 25),
                 TransactionCategory::Salary,
@@ -545,6 +607,7 @@ mod tests {
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(
                 date(2026, 7, 1),
                 TransactionCategory::Food,
@@ -566,7 +629,7 @@ mod tests {
             status_filter: TransactionStatusFilter::All,
         };
 
-        let total = count_transactions(&pool, &filter).await?;
+        let total = count_transactions(&pool, user_id, &filter).await?;
 
         assert_eq!(total, 2);
 
@@ -577,8 +640,11 @@ mod tests {
     async fn summarize_transactions_returns_total_and_category_summary(
         pool: PgPool,
     ) -> Result<(), sqlx::Error> {
+        let user_id = create_test_user(&pool, "repo-summary@example.com").await;
+        let other_user_id = create_test_user(&pool, "repo-summary-other@example.com").await;
         insert_test_transaction(
             &pool,
+            user_id,
             income_input(
                 date(2026, 6, 25),
                 TransactionCategory::Salary,
@@ -590,29 +656,45 @@ mod tests {
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(date(2026, 6, 11), TransactionCategory::Food, 1200, "昼食"),
         )
         .await?;
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(date(2026, 6, 12), TransactionCategory::Food, 800, "夕食"),
         )
         .await?;
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(date(2026, 6, 13), TransactionCategory::Daily, 980, "日用品"),
         )
         .await?;
 
         insert_test_transaction(
             &pool,
+            user_id,
             expense_input(
                 date(2026, 7, 1),
                 TransactionCategory::Food,
                 900,
                 "7月の昼食",
+            ),
+        )
+        .await?;
+
+        insert_test_transaction(
+            &pool,
+            other_user_id,
+            expense_input(
+                date(2026, 6, 20),
+                TransactionCategory::Food,
+                555,
+                "別ユーザー",
             ),
         )
         .await?;
@@ -629,7 +711,7 @@ mod tests {
             status_filter: TransactionStatusFilter::All,
         };
 
-        let summary = summarize_transactions(&pool, &filter).await?;
+        let summary = summarize_transactions(&pool, user_id, &filter).await?;
 
         assert_eq!(summary.total_income, 250000);
         assert_eq!(summary.total_expense, 2980);
@@ -663,14 +745,17 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn update_transaction_updates_existing_row(pool: PgPool) -> Result<(), sqlx::Error> {
+        let user_id = create_test_user(&pool, "repo-update@example.com").await;
         let id = insert_test_transaction(
             &pool,
+            user_id,
             expense_input(date(2026, 6, 11), TransactionCategory::Food, 1200, "昼食"),
         )
         .await?;
 
         let updated_transaction = update_transaction(
             &pool,
+            user_id,
             id,
             expense_input(
                 date(2026, 6, 12),
@@ -699,8 +784,10 @@ mod tests {
     async fn update_transaction_returns_none_when_row_does_not_exist(
         pool: PgPool,
     ) -> Result<(), sqlx::Error> {
+        let user_id = create_test_user(&pool, "repo-update-missing@example.com").await;
         let result = update_transaction(
             &pool,
+            user_id,
             Uuid::new_v4(),
             expense_input(
                 date(2026, 6, 12),
@@ -718,17 +805,19 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn delete_transaction_deletes_existing_row(pool: PgPool) -> Result<(), sqlx::Error> {
+        let user_id = create_test_user(&pool, "repo-delete@example.com").await;
         let id = insert_test_transaction(
             &pool,
+            user_id,
             expense_input(date(2026, 6, 11), TransactionCategory::Food, 1200, "昼食"),
         )
         .await?;
 
-        let rows_affected = delete_transaction(&pool, id).await?;
+        let rows_affected = delete_transaction(&pool, user_id, id).await?;
 
         assert_eq!(rows_affected, 1);
 
-        let total = count_transactions(&pool, &base_filter()).await?;
+        let total = count_transactions(&pool, user_id, &base_filter()).await?;
 
         assert_eq!(total, 0);
 
@@ -739,7 +828,8 @@ mod tests {
     async fn delete_transaction_returns_zero_when_row_does_not_exist(
         pool: PgPool,
     ) -> Result<(), sqlx::Error> {
-        let rows_affected = delete_transaction(&pool, Uuid::new_v4()).await?;
+        let user_id = create_test_user(&pool, "repo-delete-missing@example.com").await;
+        let rows_affected = delete_transaction(&pool, user_id, Uuid::new_v4()).await?;
 
         assert_eq!(rows_affected, 0);
 
