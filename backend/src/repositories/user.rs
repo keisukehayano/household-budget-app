@@ -1,0 +1,69 @@
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::models::user::UserRow;
+
+pub async fn find_user_by_email(db: &PgPool, email: &str) -> Result<Option<UserRow>, sqlx::Error> {
+    sqlx::query_as::<_, UserRow>(
+        r#"
+        select
+            id,
+            email,
+            password_hash,
+            created_at,
+            updated_at
+        from users
+        where email = $1
+        "#,
+    )
+    .bind(email)
+    .fetch_optional(db)
+    .await
+}
+
+pub async fn find_user_by_id(db: &PgPool, id: Uuid) -> Result<Option<UserRow>, sqlx::Error> {
+    sqlx::query_as::<_, UserRow>(
+        r#"
+        select
+            id,
+            email,
+            password_hash,
+            created_at,
+            updated_at
+        from users
+        where id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(db)
+    .await
+}
+
+pub async fn create_user(
+    db: &PgPool,
+    id: Uuid,
+    email: &str,
+    password_hash: &str,
+) -> Result<UserRow, sqlx::Error> {
+    sqlx::query_as::<_, UserRow>(
+        r#"
+        insert into users (
+            id,
+            email,
+            password_hash
+        )
+        values ($1, $2, $3)
+        returning
+            id,
+            email,
+            password_hash,
+            created_at,
+            updated_at
+        "#,
+    )
+    .bind(id)
+    .bind(email)
+    .bind(password_hash)
+    .fetch_one(db)
+    .await
+}

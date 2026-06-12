@@ -43,6 +43,22 @@ impl ApiError {
             details: Vec::new(),
         }
     }
+
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            message: message.into(),
+            details: Vec::new(),
+        }
+    }
+
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: message.into(),
+            details: Vec::new(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

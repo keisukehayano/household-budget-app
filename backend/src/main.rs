@@ -2,11 +2,15 @@ mod errors;
 mod handlers;
 mod models;
 mod repositories;
+mod security;
 mod services;
 mod state;
 mod validators;
 
-use axum::{Json, Router, routing::get};
+use axum::{
+    Json, Router,
+    routing::{get, post},
+};
 use serde::Serialize;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, sync::Arc};
@@ -59,6 +63,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
 
     let backend_host = env::var("BACKEND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let backend_port = env::var("BACKEND_PORT").unwrap_or_else(|_| "8080".to_string());
@@ -70,7 +75,7 @@ async fn main() {
         .await
         .expect("filed to connect database");
 
-    let state = Arc::new(AppState { db });
+    let state = Arc::new(AppState { db, jwt_secret });
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -80,6 +85,9 @@ async fn main() {
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/db-health", get(db_health))
+        .route("/api/auth/register", post(handlers::auth::register))
+        .route("/api/auth/login", post(handlers::auth::login))
+        .route("/api/auth/me", get(handlers::auth::me))
         .route(
             "/api/transactions/summary",
             get(handlers::transactions::summarize_transactions),
