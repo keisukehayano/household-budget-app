@@ -67,3 +67,25 @@ pub async fn create_user(
     .fetch_one(db)
     .await
 }
+
+pub async fn update_user_password_hash(
+    db: &PgPool,
+    id: Uuid,
+    password_hash: &str,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        update users
+        set
+            password_hash = $1,
+            updated_at = now()
+        where id = $2
+        "#,
+    )
+    .bind(password_hash)
+    .bind(id)
+    .execute(db)
+    .await?;
+
+    Ok(result.rows_affected())
+}

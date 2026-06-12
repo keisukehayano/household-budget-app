@@ -1,11 +1,144 @@
+import { useCallback, useEffect, useState } from 'react';
 import '../App.css';
+import {
+    AuthPage,
+    PasswordChangeForm,
+    clearAuthSession,
+    fetchMe,
+    loadAuthSession,
+    saveAuthSession,
+    type AuthSession,
+} from '../features/auth';
 import { TransactionsPage } from '../features/transactions';
 
 function App() {
+    const [authSession, setAuthSession] = useState<AuthSession | null>(() => loadAuthSession());
+    const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+    const [isPasswordChangeOpen, setIsPasswordChangeOpen] = useState(false);
+    const [appMessage, setAppMessage] = useState('');
+    const authToken = authSession?.token ?? null;
+
+    const handleAuthenticated = useCallback((session: AuthSession) => {
+        saveAuthSession(session);
+        setAuthSession(session);
+        setAppMessage('');
+    }, []);
+
+    const handleLogout = useCallback(() => {
+        clearAuthSession();
+        setAuthSession(null);
+        setIsPasswordChangeOpen(false);
+        setAppMessage('');
+    }, []);
+
+    useEffect(() => {
+        if (authToken === null) {
+            return;
+        }
+
+        let isActive = true;
+
+        const checkAuth = async () => {
+            try {
+                setIsCheckingAuth(true);
+
+                const user = await fetchMe(authToken);
+
+                if (!isActive) {
+                    return;
+                }
+
+                const refreshedSession: AuthSession = {
+                    token: authToken,
+                    user,
+                };
+
+                saveAuthSession(refreshedSession);
+                setAuthSession(refreshedSession);
+            } catch (error) {
+                console.error(error);
+
+                if (!isActive) {
+                    return;
+                }
+
+                clearAuthSession();
+                setAuthSession(null);
+            } finally {
+                if (isActive) {
+                    setIsCheckingAuth(false);
+                }
+            }
+        };
+
+        void checkAuth();
+
+        return () => {
+            isActive = false;
+        };
+    }, [authToken]);
+
+    if (isCheckingAuth) {
+        return (
+            <main className="app">
+                <h1>家計簿アプリ</h1>
+                <p className="page-loading">ログイン状態を確認中です...</p>
+            </main>
+        );
+    }
+
+    if (authSession === null) {
+        return (
+            <main className="app">
+                <h1>家計簿アプリ</h1>
+                <AuthPage onAuthenticated={handleAuthenticated} />
+            </main>
+        );
+    }
+
     return (
         <main className="app">
-            <h1>家計簿アプリ</h1>
-            <TransactionsPage />
+            <header className="app-header">
+                <div>
+                    <h1>家計簿アプリ</h1>
+                    <p>{authSession.user.email}</p>
+                </div>
+
+                <div className="app-header-actions">
+                    <button
+                        type="button"
+                        className="password-change-open-button"
+                        onClick={() => {
+                            setIsPasswordChangeOpen((currentValue) => !currentValue);
+                            setAppMessage('');
+                        }}
+                    >
+                        パスワード変更
+                    </button>
+
+                    <button type="button" className="logout-button" onClick={handleLogout}>
+                        ログアウト
+                    </button>
+                </div>
+            </header>
+
+            {appMessage && <p className="page-loading">{appMessage}</p>}
+
+            {isPasswordChangeOpen && (
+                <PasswordChangeForm
+                    token={authSession.token}
+                    onUnauthorized={handleLogout}
+                    onCancel={() => setIsPasswordChangeOpen(false)}
+                    onChanged={() => {
+                        setIsPasswordChangeOpen(false);
+                        setAppMessage(
+                            'パスワードを変更しました。次回ログインから新しいパスワードを使用してください。',
+                        );
+                    }}
+                />
+            )}
+
+            <TransactionsPage token={authSession.token} onUnauthorized={handleLogout} />
         </main>
     );
 }

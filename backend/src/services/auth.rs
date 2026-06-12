@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::{
     errors::ApiError,
     models::{
-        auth::{AuthResponse, LoginRequest, RegisterRequest},
+        auth::{AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest},
         user::AuthUserResponse,
     },
     repositories::user as user_repository,
@@ -105,6 +105,52 @@ pub async fn find_me(db: &PgPool, user_id: Uuid) -> Result<AuthUserResponse, Api
     Ok(AuthUserResponse::from(user))
 }
 
+pub async fn change_password(
+    db: &PgPool,
+    user_id: Uuid,
+    payload: ChangePasswordRequest,
+) -> Result<(), ApiError> {
+    let user = user_repository::find_user_by_id(db, user_id)
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "failed to find user by id");
+            ApiError::internal_server_error()
+        })?
+        .ok_or_else(|| ApiError::unauthorized("ユーザーが見つかりません。"))?;
+
+    let is_valid_current_password =
+        verify_password(&payload.current_password, &user.password_hash)?;
+
+    if !is_valid_current_password {
+        return Err(ApiError::bad_request(vec![
+            "現在のパスワードが正しくありません。".to_string(),
+        ]));
+    }
+
+    if payload.current_password == payload.new_password {
+        return Err(ApiError::bad_request(vec![
+            "新しいパスワードは現在のパスワードと異なるものを入力してください。".to_string(),
+        ]));
+    }
+
+    validate_password(&payload.new_password)?;
+
+    let new_password_hash = hash_password(&payload.new_password)?;
+
+    let rows_affected = user_repository::update_user_password_hash(db, user_id, &new_password_hash)
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "failed to update password hash");
+            ApiError::internal_server_error()
+        })?;
+
+    if rows_affected == 0 {
+        return Err(ApiError::unauthorized("ユーザーが見つかりません。"));
+    }
+
+    Ok(())
+}
+
 fn normalize_email(email: &str) -> String {
     email.trim().to_lowercase()
 }
@@ -118,19 +164,37 @@ fn validate_email_and_password(email: &str, password: &str) -> Result<(), ApiErr
         errors.push("メールアドレスの形式が不正です。".to_string());
     }
 
-    if password.len() < 8 {
-        errors.push("パスワード8文字以上で入力してください。".to_string())
-    }
-
-    if password.len() > 128 {
-        errors.push("パスワードは128文字以内で入力してください。".to_string())
-    }
+    errors.extend(validate_password_errors(password));
 
     if !errors.is_empty() {
         return Err(ApiError::bad_request(errors));
     }
 
     Ok(())
+}
+
+fn validate_password(password: &str) -> Result<(), ApiError> {
+    let errors = validate_password_errors(password);
+
+    if !errors.is_empty() {
+        return Err(ApiError::bad_request(errors));
+    }
+
+    Ok(())
+}
+
+fn validate_password_errors(password: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    if password.len() < 8 {
+        errors.push("パスワードは8文字以上で入力してください。".to_string());
+    }
+
+    if password.len() > 128 {
+        errors.push("パスワードは128文字以内で入力してください。".to_string());
+    }
+
+    errors
 }
 
 fn hash_password(password: &str) -> Result<String, ApiError> {

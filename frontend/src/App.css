@@ -972,3 +972,249 @@ select:disabled {
         background: #0d47a1;
     }
 }
+
+/* =========================
+   Auth
+========================= */
+
+.app-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.app-header h1 {
+    margin-bottom: 4px;
+}
+
+.app-header p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+.logout-button {
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 1px solid #ddd;
+    border-radius: 999px;
+    background: #fff;
+    color: #333;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.logout-button:hover {
+    background: #f5f5f5;
+}
+
+.auth-page {
+    display: grid;
+    place-items: center;
+    min-height: 60vh;
+}
+
+.auth-card {
+    display: grid;
+    gap: 16px;
+    width: min(100%, 420px);
+    padding: 24px;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+}
+
+.auth-card h2 {
+    margin: 0;
+}
+
+.auth-form {
+    display: grid;
+    gap: 16px;
+}
+
+.auth-form button,
+.auth-mode-switch-button {
+    min-height: 44px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.auth-form button {
+    border: none;
+    background: #1565c0;
+    color: #fff;
+}
+
+.auth-form button:hover {
+    background: #0d47a1;
+}
+
+.auth-mode-switch-button {
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #333;
+}
+
+.auth-mode-switch-button:hover {
+    background: #f5f5f5;
+}
+
+@media (max-width: 600px) {
+    .app-header {
+        display: grid;
+        gap: 12px;
+    }
+
+    .logout-button {
+        width: 100%;
+    }
+
+    .auth-page {
+        align-items: start;
+        min-height: auto;
+    }
+
+    .auth-card {
+        padding: 16px;
+        border-radius: 10px;
+    }
+}
+
+/* =========================
+   Password Change
+========================= */
+
+.app-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.password-change-open-button {
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 1px solid #ddd;
+    border-radius: 999px;
+    background: #fff;
+    color: #333;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.password-change-open-button:hover {
+    background: #f5f5f5;
+}
+
+.password-change-panel {
+    display: grid;
+}
+
+.password-change-card {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+}
+
+.password-change-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.password-change-heading h2 {
+    margin: 0;
+}
+
+.password-change-heading button {
+    min-height: 36px;
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.password-change-form {
+    display: grid;
+    gap: 16px;
+}
+
+.password-change-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.password-change-actions button {
+    min-height: 44px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.password-change-actions button[type='submit'] {
+    border: none;
+    background: #1565c0;
+    color: #fff;
+}
+
+.password-change-actions button[type='submit']:hover {
+    background: #0d47a1;
+}
+
+.password-change-actions button[type='button'] {
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #333;
+}
+
+.password-change-actions button[type='button']:hover {
+    background: #f5f5f5;
+}
+
+@media (max-width: 600px) {
+    .app-header-actions {
+        display: grid;
+        gap: 8px;
+    }
+
+    .password-change-open-button,
+    .logout-button {
+        width: 100%;
+    }
+
+    .password-change-card {
+        padding: 16px;
+        border-radius: 10px;
+    }
+
+    .password-change-heading {
+        display: grid;
+    }
+
+    .password-change-heading button {
+        width: 100%;
+    }
+
+    .password-change-actions {
+        display: grid;
+        gap: 8px;
+    }
+
+    .password-change-actions button {
+        width: 100%;
+    }
+}

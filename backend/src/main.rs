@@ -89,6 +89,10 @@ async fn main() {
         .route("/api/auth/login", post(handlers::auth::login))
         .route("/api/auth/me", get(handlers::auth::me))
         .route(
+            "/api/auth/change-password",
+            post(handlers::auth::change_password),
+        )
+        .route(
             "/api/transactions/summary",
             get(handlers::transactions::summarize_transactions),
         )

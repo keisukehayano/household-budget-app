@@ -5,7 +5,7 @@ use axum::{Json, extract::State, http::StatusCode};
 use crate::{
     errors::ApiError,
     models::{
-        auth::{AuthResponse, LoginRequest, RegisterRequest},
+        auth::{AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest},
         user::AuthUserResponse,
     },
     security::current_user::CurrentUser,
@@ -38,4 +38,14 @@ pub async fn me(
     let response = auth_service::find_me(&state.db, current_user.id).await?;
 
     Ok(Json(response))
+}
+
+pub async fn change_password(
+    State(state): State<Arc<AppState>>,
+    current_user: CurrentUser,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> Result<StatusCode, ApiError> {
+    auth_service::change_password(&state.db, current_user.id, payload).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
