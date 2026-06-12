@@ -14,6 +14,19 @@ type ApiErrorResponse = {
     details?: string[];
 };
 
+export class ApiRequestError extends Error {
+    public readonly status: number;
+
+    constructor(
+        status: number,
+        message: string,
+    ) {
+        super(message);
+        this.name = 'ApiRequestError';
+        this.status = status;
+    }
+}
+
 export type FetchTransactionsParams = {
     month?: string;
     q?: string;
@@ -42,10 +55,37 @@ const handleResponse = async <T>(response: Response): Promise<T> => {
             // JSON形式ではないエラーの場合は、デフォルトメッセージを使う。
         }
 
-        throw new Error(errorMessage);
+        throw new ApiRequestError(response.status, errorMessage);
     }
 
     return response.json() as Promise<T>;
+};
+
+const handleEmptyResponse = async (response: Response): Promise<void> => {
+    if (!response.ok) {
+        let errorMessage = `API request failed: ${response.status}`;
+
+        try {
+            const errorResponse = (await response.json()) as ApiErrorResponse;
+            errorMessage = createApiErrorMessage(errorResponse);
+        } catch {
+            // JSON形式ではないエラーの場合は、デフォルトメッセージを使う。
+        }
+
+        throw new ApiRequestError(response.status, errorMessage);
+    }
+};
+
+const createAuthHeaders = (token: string, hasJsonBody = false): HeadersInit => {
+    const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+    };
+
+    if (hasJsonBody) {
+        headers['Content-Type'] = 'application/json';
+    }
+
+    return headers;
 };
 
 const buildTransactionsUrl = (params?: FetchTransactionsParams): string => {
@@ -79,33 +119,36 @@ const buildTransactionsUrl = (params?: FetchTransactionsParams): string => {
 };
 
 export const fetchTransactions = async (
+    token: string,
     params?: FetchTransactionsParams,
 ): Promise<TransactionListResponse> => {
-    const response = await fetch(buildTransactionsUrl(params));
+    const response = await fetch(buildTransactionsUrl(params), {
+        headers: createAuthHeaders(token),
+    });
 
     return handleResponse<TransactionListResponse>(response);
 };
 
 export const createTransaction = async (
+    token: string,
     transaction: TransactionCreateInput,
 ): Promise<Transaction> => {
     const response = await fetch(`${API_BASE_URL}/api/transactions`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: createAuthHeaders(token, true),
         body: JSON.stringify(transaction),
     });
 
     return handleResponse<Transaction>(response);
 };
 
-export const updateTransaction = async (transaction: Transaction): Promise<Transaction> => {
+export const updateTransaction = async (
+    token: string,
+    transaction: Transaction,
+): Promise<Transaction> => {
     const response = await fetch(`${API_BASE_URL}/api/transactions/${transaction.id}`, {
         method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: createAuthHeaders(token, true),
         body: JSON.stringify({
             type: transaction.type,
             date: transaction.date,
@@ -119,23 +162,13 @@ export const updateTransaction = async (transaction: Transaction): Promise<Trans
     return handleResponse<Transaction>(response);
 };
 
-export const deleteTransaction = async (id: string): Promise<void> => {
+export const deleteTransaction = async (token: string, id: string): Promise<void> => {
     const response = await fetch(`${API_BASE_URL}/api/transactions/${id}`, {
         method: 'DELETE',
+        headers: createAuthHeaders(token),
     });
 
-    if (!response.ok) {
-        let errorMessage = `API request failed: ${response.status}`;
-
-        try {
-            const errorResponse = (await response.json()) as ApiErrorResponse;
-            errorMessage = createApiErrorMessage(errorResponse);
-        } catch {
-            // JSON形式ではないエラーの場合は、デフォルトメッセージを使う。
-        }
-
-        throw new Error(errorMessage);
-    }
+    return handleEmptyResponse(response);
 };
 
 export type FetchTransactionSummaryParams = {
@@ -163,9 +196,12 @@ const buildTransactionSummaryUrl = (params?: FetchTransactionSummaryParams): str
 };
 
 export const fetchTransactionSummary = async (
+    token: string,
     params?: FetchTransactionSummaryParams,
 ): Promise<TransactionSummary> => {
-    const response = await fetch(buildTransactionSummaryUrl(params));
+    const response = await fetch(buildTransactionSummaryUrl(params), {
+        headers: createAuthHeaders(token),
+    });
 
     return handleResponse<TransactionSummary>(response);
 };

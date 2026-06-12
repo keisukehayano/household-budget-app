@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+    ApiRequestError,
     createTransaction,
     deleteTransaction,
     fetchTransactionSummary,
@@ -43,7 +44,12 @@ const sortOrderLabels: Record<TransactionSortOrder, string> = {
     'amount-asc': '金額が低い順',
 };
 
-export const TransactionsPage = () => {
+type TransactionsPageProps = {
+    token: string;
+    onUnauthorized: () => void;
+};
+
+export const TransactionsPage = ({ token, onUnauthorized }: TransactionsPageProps) => {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [pagination, setPagination] = useState<TransactionPaginationType | null>(null);
     const [transactionSummary, setTransactionSummary] =
@@ -74,6 +80,17 @@ export const TransactionsPage = () => {
     const isSearchPending = searchQuery !== debouncedSearchQuery;
     const selectedMonthLabel = selectedMonth || '全期間';
     const searchQueryLabel = searchQuery.trim() ? `検索: ${searchQuery.trim()}` : '検索なし';
+    const getErrorMessageOrHandleUnauthorized = useCallback((
+        error: unknown,
+        fallbackMessage: string,
+    ): string | null => {
+        if (error instanceof ApiRequestError && error.status === 401) {
+            onUnauthorized();
+            return null;
+        }
+
+        return error instanceof Error ? error.message : fallbackMessage;
+    }, [onUnauthorized]);
 
     useEffect(() => {
         let isActive = true;
@@ -83,7 +100,7 @@ export const TransactionsPage = () => {
                 setIsFetching(true);
                 setErrorMessage('');
 
-                const response = await fetchTransactions({
+                const response = await fetchTransactions(token, {
                     month: selectedMonth,
                     q: debouncedSearchQuery,
                     sort: sortOrder,
@@ -118,9 +135,16 @@ export const TransactionsPage = () => {
                     return;
                 }
 
-                setErrorMessage(
-                    error instanceof Error ? error.message : '取引データの取得に失敗しました。',
+                const message = getErrorMessageOrHandleUnauthorized(
+                    error,
+                    '取引データの取得に失敗しました。',
                 );
+
+                if (message === null) {
+                    return;
+                }
+
+                setErrorMessage(message);
             } finally {
                 if (isActive) {
                     setIsLoading(false);
@@ -134,7 +158,16 @@ export const TransactionsPage = () => {
         return () => {
             isActive = false;
         };
-    }, [selectedMonth, debouncedSearchQuery, sortOrder, currentPage, selectedStatus, reloadKey]);
+    }, [
+        getErrorMessageOrHandleUnauthorized,
+        token,
+        selectedMonth,
+        debouncedSearchQuery,
+        sortOrder,
+        currentPage,
+        selectedStatus,
+        reloadKey,
+    ]);
 
     useEffect(() => {
         let isActive = true;
@@ -144,7 +177,7 @@ export const TransactionsPage = () => {
                 setIsSummaryFetching(true);
                 setErrorMessage('');
 
-                const summary = await fetchTransactionSummary({
+                const summary = await fetchTransactionSummary(token, {
                     month: selectedMonth,
                     q: debouncedSearchQuery,
                     status: selectedStatus,
@@ -162,9 +195,16 @@ export const TransactionsPage = () => {
                     return;
                 }
 
-                setErrorMessage(
-                    error instanceof Error ? error.message : '集計データの取得に失敗しました。',
+                const message = getErrorMessageOrHandleUnauthorized(
+                    error,
+                    '集計データの取得に失敗しました。',
                 );
+
+                if (message === null) {
+                    return;
+                }
+
+                setErrorMessage(message);
             } finally {
                 if (isActive) {
                     setIsSummaryFetching(false);
@@ -177,7 +217,14 @@ export const TransactionsPage = () => {
         return () => {
             isActive = false;
         };
-    }, [selectedMonth, debouncedSearchQuery, selectedStatus, reloadKey]);
+    }, [
+        getErrorMessageOrHandleUnauthorized,
+        token,
+        selectedMonth,
+        debouncedSearchQuery,
+        selectedStatus,
+        reloadKey,
+    ]);
 
     const reloadTransactions = () => {
         setReloadKey((currentReloadKey) => currentReloadKey + 1);
@@ -234,7 +281,7 @@ export const TransactionsPage = () => {
             setIsFormSubmitting(true);
             setErrorMessage('');
 
-            const createdTransaction = await createTransaction(transaction);
+            const createdTransaction = await createTransaction(token, transaction);
 
             setSelectedStatus(createdTransaction.status);
             setSelectedMonth(createdTransaction.date.slice(0, 7));
@@ -246,7 +293,15 @@ export const TransactionsPage = () => {
             reloadTransactions();
         } catch (error) {
             console.error(error);
-            setErrorMessage(error instanceof Error ? error.message : '取引の登録に失敗しました。');
+            const message = getErrorMessageOrHandleUnauthorized(
+                error,
+                '取引の登録に失敗しました。',
+            );
+
+            if (message !== null) {
+                setErrorMessage(message);
+            }
+
             throw error;
         } finally {
             setIsFormSubmitting(false);
@@ -258,7 +313,7 @@ export const TransactionsPage = () => {
             setIsFormSubmitting(true);
             setErrorMessage('');
 
-            const savedTransaction = await updateTransaction(updatedTransaction);
+            const savedTransaction = await updateTransaction(token, updatedTransaction);
 
             setEditingTransaction(null);
             setSelectedStatus(savedTransaction.status);
@@ -270,7 +325,15 @@ export const TransactionsPage = () => {
             reloadTransactions();
         } catch (error) {
             console.error(error);
-            setErrorMessage(error instanceof Error ? error.message : '取引の更新に失敗しました。');
+            const message = getErrorMessageOrHandleUnauthorized(
+                error,
+                '取引の更新に失敗しました。',
+            );
+
+            if (message !== null) {
+                setErrorMessage(message);
+            }
+
             throw error;
         } finally {
             setIsFormSubmitting(false);
@@ -298,7 +361,7 @@ export const TransactionsPage = () => {
             setDeletingTransactionId(id);
             setErrorMessage('');
 
-            await deleteTransaction(id);
+            await deleteTransaction(token, id);
 
             setEditingTransaction((currentEditingTransaction) => {
                 if (currentEditingTransaction?.id === id) {
@@ -311,7 +374,14 @@ export const TransactionsPage = () => {
             reloadTransactions();
         } catch (error) {
             console.error(error);
-            setErrorMessage(error instanceof Error ? error.message : '取引の削除に失敗しました。');
+            const message = getErrorMessageOrHandleUnauthorized(
+                error,
+                '取引の削除に失敗しました。',
+            );
+
+            if (message !== null) {
+                setErrorMessage(message);
+            }
         } finally {
             setDeletingTransactionId(null);
         }
@@ -339,7 +409,7 @@ export const TransactionsPage = () => {
             setConfirmingTransactionId(transaction.id);
             setErrorMessage('');
 
-            const confirmedTransaction = await updateTransaction({
+            const confirmedTransaction = await updateTransaction(token, {
                 ...transaction,
                 date: isFuturePlannedTransaction ? today : transaction.date,
                 status: 'confirmed',
@@ -359,9 +429,14 @@ export const TransactionsPage = () => {
             reloadTransactions();
         } catch (error) {
             console.error(error);
-            setErrorMessage(
-                error instanceof Error ? error.message : '予定取引の確定に失敗しました。',
+            const message = getErrorMessageOrHandleUnauthorized(
+                error,
+                '予定取引の確定に失敗しました。',
             );
+
+            if (message !== null) {
+                setErrorMessage(message);
+            }
         } finally {
             setConfirmingTransactionId(null);
         }
