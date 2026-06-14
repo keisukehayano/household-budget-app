@@ -59,7 +59,9 @@ pub async fn forgot_password(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ForgotPasswordRequest>,
 ) -> Result<Json<ForgotPasswordResponse>, ApiError> {
-    let response = auth_service::forgot_password(&state.db, &state.frontend_url, payload).await?;
+    let response =
+        auth_service::forgot_password(&state.db, &state.frontend_url, &state.email_client, payload)
+            .await?;
 
     Ok(Json(response))
 }

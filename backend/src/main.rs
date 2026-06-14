@@ -1,3 +1,4 @@
+mod email;
 mod errors;
 mod handlers;
 mod models;
@@ -19,7 +20,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::state::AppState;
+use crate::{email::EmailClient, state::AppState};
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -64,6 +65,10 @@ async fn main() {
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
+    let frontend_url = env::var("FRONTEND_URL").expect("FRONTEND_URL must be set");
+    let email_client = EmailClient::from_env().expect("failed to initialize email client");
+
     let frontend_url = env::var("FRONTEND_URL").expect("FRONTEND_URL must be set");
 
     let backend_host = env::var("BACKEND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -80,6 +85,7 @@ async fn main() {
         db,
         jwt_secret,
         frontend_url,
+        email_client,
     });
 
     let cors = CorsLayer::new()
