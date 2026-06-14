@@ -4,6 +4,8 @@ use rand_core::OsRng;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::email::EmailClient;
+
 use crate::{
     errors::ApiError,
     models::{
@@ -168,6 +170,7 @@ pub async fn change_password(
 pub async fn forgot_password(
     db: &PgPool,
     frontend_url: &str,
+    email_client: &EmailClient,
     payload: ForgotPasswordRequest,
 ) -> Result<ForgotPasswordResponse, ApiError> {
     let email = normalize_email(&payload.email);
@@ -196,6 +199,7 @@ pub async fn forgot_password(
 
     let token = reset_token::generate_password_reset_token();
     let token_hash = reset_token::hash_password_reset_token(&token);
+
     let expires_at = Utc::now()
         .checked_add_signed(Duration::minutes(30))
         .expect("valid password reset token expiration");
@@ -226,7 +230,16 @@ pub async fn forgot_password(
         token
     );
 
-    tracing::info!(%email, %reset_url, "password reset URL generated for development");
+    if let Err(error) = email_client
+        .send_password_reset_email(&user.email, &reset_url)
+        .await
+    {
+        tracing::error!(
+            ?error,
+            email = %user.email,
+            "failed to send password reset email"
+        );
+    }
 
     Ok(response)
 }
