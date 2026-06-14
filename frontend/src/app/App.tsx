@@ -3,6 +3,7 @@ import '../App.css';
 import {
     AuthPage,
     PasswordChangeForm,
+    ResetPasswordPage,
     clearAuthSession,
     fetchMe,
     loadAuthSession,
@@ -17,6 +18,7 @@ function App() {
     const [isPasswordChangeOpen, setIsPasswordChangeOpen] = useState(false);
     const [appMessage, setAppMessage] = useState('');
     const authToken = authSession?.token ?? null;
+    const isResetPasswordRoute = window.location.pathname === '/reset-password';
 
     const handleAuthenticated = useCallback((session: AuthSession) => {
         saveAuthSession(session);
@@ -29,6 +31,14 @@ function App() {
         setAuthSession(null);
         setIsPasswordChangeOpen(false);
         setAppMessage('');
+    }, []);
+
+    const handleGoToLogin = useCallback(() => {
+        clearAuthSession();
+        setAuthSession(null);
+        setIsPasswordChangeOpen(false);
+        setAppMessage('');
+        window.history.replaceState(null, '', '/');
     }, []);
 
     useEffect(() => {
@@ -77,6 +87,15 @@ function App() {
             isActive = false;
         };
     }, [authToken]);
+
+    if (isResetPasswordRoute) {
+        return (
+            <main className="app">
+                <h1>家計簿アプリ</h1>
+                <ResetPasswordPage onCompleted={handleGoToLogin} />
+            </main>
+        );
+    }
 
     if (isCheckingAuth) {
         return (
@@ -129,10 +148,12 @@ function App() {
                     token={authSession.token}
                     onUnauthorized={handleLogout}
                     onCancel={() => setIsPasswordChangeOpen(false)}
-                    onChanged={() => {
+                    onChanged={(session) => {
+                        saveAuthSession(session);
+                        setAuthSession(session);
                         setIsPasswordChangeOpen(false);
                         setAppMessage(
-                            'パスワードを変更しました。次回ログインから新しいパスワードを使用してください。',
+                            'パスワードを変更しました。既存のログイン状態は失効されました。',
                         );
                     }}
                 />

@@ -6,7 +6,9 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::{errors::ApiError, security::jwt, state::AppState};
+use crate::{
+    errors::ApiError, repositories::user as user_repository, security::jwt, state::AppState,
+};
 
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
@@ -38,6 +40,20 @@ where
 
         let user_id = jwt::parse_user_id(&claims)
             .map_err(|_| ApiError::unauthorized("トークンが不正です。"))?;
+
+        let user = user_repository::find_user_by_id(&state.db, user_id)
+            .await
+            .map_err(|error| {
+                tracing::error!(?error, "failed to find user while authenticating");
+                ApiError::internal_server_error()
+            })?
+            .ok_or_else(|| ApiError::unauthorized("ユーザーが見つかりません。"))?;
+
+        if user.token_version != claims.token_version {
+            return Err(ApiError::unauthorized(
+                "トークンは失効しています。再ログインしてください。",
+            ));
+        }
 
         Ok(Self { id: user_id })
     }

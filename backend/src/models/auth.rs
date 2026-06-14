@@ -23,6 +23,24 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ForgotPasswordResponse {
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub token: String,
+
+    #[serde(rename = "newPassword")]
+    pub new_password: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,

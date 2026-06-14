@@ -10,6 +10,7 @@ pub async fn find_user_by_email(db: &PgPool, email: &str) -> Result<Option<UserR
             id,
             email,
             password_hash,
+            token_version,
             created_at,
             updated_at
         from users
@@ -28,6 +29,7 @@ pub async fn find_user_by_id(db: &PgPool, id: Uuid) -> Result<Option<UserRow>, s
             id,
             email,
             password_hash,
+            token_version,
             created_at,
             updated_at
         from users
@@ -57,6 +59,7 @@ pub async fn create_user(
             id,
             email,
             password_hash,
+            token_version,
             created_at,
             updated_at
         "#,
@@ -68,24 +71,30 @@ pub async fn create_user(
     .await
 }
 
-pub async fn update_user_password_hash(
+pub async fn update_user_password_hash_and_increment_token_version(
     db: &PgPool,
     id: Uuid,
     password_hash: &str,
-) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
+) -> Result<Option<UserRow>, sqlx::Error> {
+    sqlx::query_as::<_, UserRow>(
         r#"
         update users
         set
             password_hash = $1,
+            token_version = token_version + 1,
             updated_at = now()
         where id = $2
+        returning
+            id,
+            email,
+            password_hash,
+            token_version,
+            created_at,
+            updated_at
         "#,
     )
     .bind(password_hash)
     .bind(id)
-    .execute(db)
-    .await?;
-
-    Ok(result.rows_affected())
+    .fetch_optional(db)
+    .await
 }

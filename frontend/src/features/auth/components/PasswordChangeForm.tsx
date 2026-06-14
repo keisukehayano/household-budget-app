@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { AuthApiError, changePassword } from '../api/authApi';
+import type { AuthSession } from '../types';
 
 type PasswordChangeFormProps = {
     token: string;
-    onChanged: () => void;
+    onChanged: (session: AuthSession) => void;
     onUnauthorized: () => void;
     onCancel: () => void;
 };
@@ -67,12 +68,12 @@ export const PasswordChangeForm = ({
             setIsSubmitting(true);
             setErrorMessage('');
 
-            await changePassword(token, {
+            const session = await changePassword(token, {
                 currentPassword,
                 newPassword,
             });
 
-            onChanged();
+            onChanged(session);
         } catch (error) {
             console.error(error);
 

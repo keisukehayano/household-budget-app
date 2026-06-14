@@ -110,6 +110,7 @@ mod tests {
         let state = Arc::new(AppState {
             db: pool,
             jwt_secret: TEST_JWT_SECRET.to_string(),
+            frontend_url: "http://127.0.0.1:5173".to_string(),
         });
 
         (

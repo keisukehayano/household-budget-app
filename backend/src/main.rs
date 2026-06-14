@@ -64,6 +64,7 @@ async fn main() {
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let frontend_url = env::var("FRONTEND_URL").expect("FRONTEND_URL must be set");
 
     let backend_host = env::var("BACKEND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let backend_port = env::var("BACKEND_PORT").unwrap_or_else(|_| "8080".to_string());
@@ -75,7 +76,11 @@ async fn main() {
         .await
         .expect("filed to connect database");
 
-    let state = Arc::new(AppState { db, jwt_secret });
+    let state = Arc::new(AppState {
+        db,
+        jwt_secret,
+        frontend_url,
+    });
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -91,6 +96,14 @@ async fn main() {
         .route(
             "/api/auth/change-password",
             post(handlers::auth::change_password),
+        )
+        .route(
+            "/api/auth/forgot-password",
+            post(handlers::auth::forgot_password),
+        )
+        .route(
+            "/api/auth/reset-password",
+            post(handlers::auth::reset_password),
         )
         .route(
             "/api/transactions/summary",

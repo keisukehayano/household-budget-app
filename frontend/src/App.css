@@ -1218,3 +1218,22 @@ select:disabled {
         width: 100%;
     }
 }
+
+.auth-links {
+    display: grid;
+    gap: 8px;
+}
+
+.auth-link-button {
+    min-height: 40px;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: #1565c0;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.auth-link-button:hover {
+    text-decoration: underline;
+}

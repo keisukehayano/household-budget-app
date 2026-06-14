@@ -9,6 +9,10 @@ use crate::models::user::UserRow;
 pub struct Claims {
     pub sub: String,
     pub email: String,
+
+    #[serde(rename = "tokenVersion")]
+    pub token_version: i32,
+
     pub exp: usize,
 }
 
@@ -24,6 +28,7 @@ pub fn generate_token(
     let claims = Claims {
         sub: user.id.to_string(),
         email: user.email.to_string(),
+        token_version: user.token_version,
         exp,
     };
 

@@ -1,4 +1,5 @@
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use chrono::{Duration, Utc};
 use rand_core::OsRng;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -6,11 +7,14 @@ use uuid::Uuid;
 use crate::{
     errors::ApiError,
     models::{
-        auth::{AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest},
+        auth::{
+            AuthResponse, ChangePasswordRequest, ForgotPasswordRequest, ForgotPasswordResponse,
+            LoginRequest, RegisterRequest, ResetPasswordRequest,
+        },
         user::AuthUserResponse,
     },
-    repositories::user as user_repository,
-    security::jwt,
+    repositories::{password_reset as password_reset_repository, user as user_repository},
+    security::{jwt, reset_token},
 };
 
 pub async fn register(
@@ -107,9 +111,10 @@ pub async fn find_me(db: &PgPool, user_id: Uuid) -> Result<AuthUserResponse, Api
 
 pub async fn change_password(
     db: &PgPool,
+    jwt_secret: &str,
     user_id: Uuid,
     payload: ChangePasswordRequest,
-) -> Result<(), ApiError> {
+) -> Result<AuthResponse, ApiError> {
     let user = user_repository::find_user_by_id(db, user_id)
         .await
         .map_err(|error| {
@@ -137,15 +142,139 @@ pub async fn change_password(
 
     let new_password_hash = hash_password(&payload.new_password)?;
 
-    let rows_affected = user_repository::update_user_password_hash(db, user_id, &new_password_hash)
+    let updated_user = user_repository::update_user_password_hash_and_increment_token_version(
+        db,
+        user_id,
+        &new_password_hash,
+    )
+    .await
+    .map_err(|error| {
+        tracing::error!(?error, "failed to update password hash");
+        ApiError::internal_server_error()
+    })?
+    .ok_or_else(|| ApiError::unauthorized("ユーザーが見つかりません。"))?;
+
+    let token = jwt::generate_token(&updated_user, jwt_secret).map_err(|error| {
+        tracing::error!(?error, "failed to generate jwt after password change");
+        ApiError::internal_server_error()
+    })?;
+
+    Ok(AuthResponse {
+        token,
+        user: AuthUserResponse::from(updated_user),
+    })
+}
+
+pub async fn forgot_password(
+    db: &PgPool,
+    frontend_url: &str,
+    payload: ForgotPasswordRequest,
+) -> Result<ForgotPasswordResponse, ApiError> {
+    let email = normalize_email(&payload.email);
+
+    if email.is_empty() || !email.contains('@') {
+        return Err(ApiError::bad_request(vec![
+            "メールアドレスの形式が不正です。".to_string(),
+        ]));
+    }
+
+    let response = ForgotPasswordResponse {
+        message:
+            "入力されたメールアドレスが登録されている場合、パスワード再設定用の案内を送信しました。"
+                .to_string(),
+    };
+
+    let Some(user) = user_repository::find_user_by_email(db, &email)
         .await
         .map_err(|error| {
-            tracing::error!(?error, "failed to update password hash");
+            tracing::error!(?error, "failed to find user for password reset");
+            ApiError::internal_server_error()
+        })?
+    else {
+        return Ok(response);
+    };
+
+    let token = reset_token::generate_password_reset_token();
+    let token_hash = reset_token::hash_password_reset_token(&token);
+    let expires_at = Utc::now()
+        .checked_add_signed(Duration::minutes(30))
+        .expect("valid password reset token expiration");
+
+    password_reset_repository::mark_user_password_reset_tokens_used(db, user.id)
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "failed to mark old password reset tokens used");
             ApiError::internal_server_error()
         })?;
 
-    if rows_affected == 0 {
-        return Err(ApiError::unauthorized("ユーザーが見つかりません。"));
+    password_reset_repository::create_password_reset_token(
+        db,
+        Uuid::new_v4(),
+        user.id,
+        &token_hash,
+        expires_at,
+    )
+    .await
+    .map_err(|error| {
+        tracing::error!(?error, "failed to create password reset token");
+        ApiError::internal_server_error()
+    })?;
+
+    let reset_url = format!(
+        "{}/reset-password?token={}",
+        frontend_url.trim_end_matches('/'),
+        token
+    );
+
+    tracing::info!(%email, %reset_url, "password reset URL generated for development");
+
+    Ok(response)
+}
+
+pub async fn reset_password(db: &PgPool, payload: ResetPasswordRequest) -> Result<(), ApiError> {
+    validate_password(&payload.new_password)?;
+
+    let token = payload.token.trim();
+
+    if token.is_empty() {
+        return Err(ApiError::bad_request(vec![
+            "再設定トークンが不正です。".to_string(),
+        ]));
+    }
+
+    let token_hash = reset_token::hash_password_reset_token(token);
+
+    let reset_token_row =
+        password_reset_repository::find_valid_password_reset_token(db, &token_hash)
+            .await
+            .map_err(|error| {
+                tracing::error!(?error, "failed to find password reset token");
+                ApiError::internal_server_error()
+            })?
+            .ok_or_else(|| {
+                ApiError::bad_request(vec![
+                    "再設定リンクが無効、または有効期限切れです。".to_string(),
+                ])
+            })?;
+
+    let new_password_hash = hash_password(&payload.new_password)?;
+
+    let is_updated = password_reset_repository::consume_token_and_update_password(
+        db,
+        reset_token_row.id,
+        reset_token_row.user_id,
+        &new_password_hash,
+    )
+    .await
+    .map_err(|error| {
+        tracing::error!(?error, "failed to reset password");
+        ApiError::internal_server_error()
+    })?;
+
+    if !is_updated {
+        return Err(ApiError::bad_request(vec![
+            "再設定リンクが無効、または有効期限切れです。".to_string(),
+        ]));
     }
 
     Ok(())

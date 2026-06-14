@@ -2,8 +2,11 @@ import type {
     AuthResponse,
     AuthUser,
     ChangePasswordInput,
+    ForgotPasswordInput,
+    ForgotPasswordResponse,
     LoginInput,
     RegisterInput,
+    ResetPasswordInput,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8080';
@@ -88,12 +91,38 @@ export const fetchMe = async (token: string): Promise<AuthUser> => {
 export const changePassword = async (
     token: string,
     input: ChangePasswordInput,
-): Promise<void> => {
+): Promise<AuthResponse> => {
     const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(input),
+    });
+
+    return handleResponse<AuthResponse>(response);
+};
+
+export const forgotPassword = async (
+    input: ForgotPasswordInput,
+): Promise<ForgotPasswordResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
+    });
+
+    return handleResponse<ForgotPasswordResponse>(response);
+};
+
+export const resetPassword = async (input: ResetPasswordInput): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
         },
         body: JSON.stringify(input),
     });
