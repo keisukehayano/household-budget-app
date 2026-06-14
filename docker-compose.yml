@@ -1,15 +1,15 @@
 services:
-  db:
-    image: postgres:18
-    container_name: household_budget_db
-    environment:
-      POSTGRES_USER: app_user
-      POSTGRES_PASSWORD: app_password
-      POSTGRES_DB: household_budget
-    ports:
-      - "5432:5432"
-    volumes:
-      - household_budget_pgdata:/var/lib/postgresql
+    db:
+        image: postgres:18
+        container_name: household_budget_db
+        environment:
+            POSTGRES_USER: app_user
+            POSTGRES_PASSWORD: app_password
+            POSTGRES_DB: household_budget
+        ports:
+            - '5432:5432'
+        volumes:
+            - household_budget_pgdata:/var/lib/postgresql
 
 volumes:
-  household_budget_pgdata:
+    household_budget_pgdata:
