@@ -1,7 +1,8 @@
 use std::env;
 
 use lettre::{
-    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::Mailbox,
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    message::{Mailbox, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
 
@@ -41,9 +42,17 @@ impl EmailClient {
         let from = Mailbox::new(Some(mail_from_name), from_address);
 
         let builder = if smtp_use_tls {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(&smtp_host)
-                .map_err(|error| format!("failed to create SMTP relay: {error}"))?
-                .port(smtp_port)
+            if smtp_port == 465 {
+                // SMTPS: 最初からTLSで接続する方式
+                AsyncSmtpTransport::<Tokio1Executor>::relay(&smtp_host)
+                    .map_err(|error| format!("failed to create SMTPS relay: {error}"))?
+                    .port(smtp_port)
+            } else {
+                // STARTTLS: 587番ポート向け。Brevoはこちら。
+                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)
+                    .map_err(|error| format!("failed to create STARTTLS relay: {error}"))?
+                    .port(smtp_port)
+            }
         } else {
             AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&smtp_host).port(smtp_port)
         };
@@ -87,6 +96,7 @@ impl EmailClient {
             .from(self.from.clone())
             .to(to)
             .subject("パスワード再設定のご案内")
+            .header(ContentType::TEXT_PLAIN)
             .body(body)?;
 
         self.mailer.send(message).await?;
@@ -106,5 +116,37 @@ impl EmailClient {
                 .build(),
             from: Mailbox::new(Some("家計簿アプリ".to_string()), from),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn password_reset_email_uses_utf8_plain_text_content_type() {
+        let from = Mailbox::new(
+            Some("家計簿アプリ".to_string()),
+            "no-reply@household-budget.local"
+                .parse()
+                .expect("test from address should be valid"),
+        );
+        let to = "user@example.com"
+            .parse::<Mailbox>()
+            .expect("test recipient should be valid");
+
+        let message = Message::builder()
+            .from(from)
+            .to(to)
+            .subject("パスワード再設定のご案内")
+            .header(ContentType::TEXT_PLAIN)
+            .body("パスワード再設定の申請を受け付けました。".to_string())
+            .expect("message should be built");
+
+        let formatted =
+            String::from_utf8(message.formatted()).expect("formatted email should be valid utf-8");
+
+        assert!(formatted.contains("Content-Type: text/plain; charset=utf-8\r\n"));
+        assert!(formatted.contains("Content-Transfer-Encoding: base64\r\n"));
     }
 }
