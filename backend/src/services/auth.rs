@@ -361,3 +361,230 @@ fn verify_password(password: &str, password_hash: &str) -> Result<bool, ApiError
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use axum::{body::to_bytes, response::IntoResponse};
+    use chrono::Utc;
+    use serde_json::Value;
+    use sqlx::{PgPool, Row};
+
+    use crate::{
+        email::EmailClient,
+        models::auth::{ForgotPasswordRequest, ResetPasswordRequest},
+        repositories::{password_reset as password_reset_repository, user as user_repository},
+    };
+
+    async fn create_test_user(
+        pool: &PgPool,
+        email: &str,
+        password: &str,
+    ) -> crate::models::user::UserRow {
+        let password_hash = hash_password(password).expect("test password hash should be created");
+
+        user_repository::create_user(pool, Uuid::new_v4(), email, &password_hash)
+            .await
+            .expect("test user should be created")
+    }
+
+    async fn count_password_reset_tokens(pool: &PgPool, user_id: Uuid) -> i64 {
+        sqlx::query_scalar(
+            r#"
+            select count(*)
+            from password_reset_tokens
+            where user_id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .expect("password reset token count should be fetched")
+    }
+
+    async fn error_response_json(error: ApiError) -> (axum::http::StatusCode, Value) {
+        let response = error.into_response();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("error response body should be read");
+        let json = serde_json::from_slice(&bytes).expect("error response body should be json");
+
+        (status, json)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn forgot_password_returns_generic_message_for_unknown_email(pool: PgPool) {
+        let response = forgot_password(
+            &pool,
+            "http://127.0.0.1:5173",
+            &EmailClient::new_for_tests(),
+            ForgotPasswordRequest {
+                email: "missing@example.com".to_string(),
+            },
+        )
+        .await
+        .expect("forgot password should succeed");
+
+        assert_eq!(
+            response.message,
+            "入力されたメールアドレスが登録されている場合、パスワード再設定用の案内を送信しました。"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn forgot_password_marks_old_tokens_used_and_creates_new_token(pool: PgPool) {
+        let user = create_test_user(&pool, "reset@example.com", "OldPassword123").await;
+        let old_token_hash = reset_token::hash_password_reset_token("old-token");
+
+        password_reset_repository::create_password_reset_token(
+            &pool,
+            Uuid::new_v4(),
+            user.id,
+            &old_token_hash,
+            Utc::now() + Duration::minutes(30),
+        )
+        .await
+        .expect("old password reset token should be created");
+
+        let response = forgot_password(
+            &pool,
+            "http://127.0.0.1:5173/",
+            &EmailClient::new_for_tests(),
+            ForgotPasswordRequest {
+                email: user.email.clone(),
+            },
+        )
+        .await
+        .expect("forgot password should succeed");
+
+        assert_eq!(
+            response.message,
+            "入力されたメールアドレスが登録されている場合、パスワード再設定用の案内を送信しました。"
+        );
+        assert_eq!(count_password_reset_tokens(&pool, user.id).await, 2);
+
+        let rows = sqlx::query(
+            r#"
+            select token_hash, used_at
+            from password_reset_tokens
+            where user_id = $1
+            order by created_at asc
+            "#,
+        )
+        .bind(user.id)
+        .fetch_all(&pool)
+        .await
+        .expect("password reset tokens should be loaded");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get::<String, _>("token_hash"), old_token_hash);
+        assert!(
+            rows[0]
+                .get::<Option<chrono::DateTime<Utc>>, _>("used_at")
+                .is_some()
+        );
+        assert!(
+            rows[1]
+                .get::<Option<chrono::DateTime<Utc>>, _>("used_at")
+                .is_none()
+        );
+        assert_ne!(rows[1].get::<String, _>("token_hash"), old_token_hash);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_updates_password_and_consumes_token(pool: PgPool) {
+        let user = create_test_user(&pool, "reset@example.com", "OldPassword123").await;
+        let raw_token = "valid-reset-token";
+        let token_hash = reset_token::hash_password_reset_token(raw_token);
+
+        let token_row = password_reset_repository::create_password_reset_token(
+            &pool,
+            Uuid::new_v4(),
+            user.id,
+            &token_hash,
+            Utc::now() + Duration::minutes(30),
+        )
+        .await
+        .expect("password reset token should be created");
+
+        reset_password(
+            &pool,
+            ResetPasswordRequest {
+                token: raw_token.to_string(),
+                new_password: "NewPassword123".to_string(),
+            },
+        )
+        .await
+        .expect("reset password should succeed");
+
+        let updated_user = user_repository::find_user_by_id(&pool, user.id)
+            .await
+            .expect("updated user should be fetched")
+            .expect("updated user should exist");
+
+        assert!(verify_password("NewPassword123", &updated_user.password_hash).unwrap());
+        assert_eq!(updated_user.token_version, user.token_version + 1);
+
+        let used_at = sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+            r#"
+            select used_at
+            from password_reset_tokens
+            where id = $1
+            "#,
+        )
+        .bind(token_row.id)
+        .fetch_one(&pool)
+        .await
+        .expect("used_at should be loaded");
+
+        assert!(used_at.is_some());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_rejects_used_token(pool: PgPool) {
+        let user = create_test_user(&pool, "reset@example.com", "OldPassword123").await;
+        let raw_token = "single-use-token";
+        let token_hash = reset_token::hash_password_reset_token(raw_token);
+
+        password_reset_repository::create_password_reset_token(
+            &pool,
+            Uuid::new_v4(),
+            user.id,
+            &token_hash,
+            Utc::now() + Duration::minutes(30),
+        )
+        .await
+        .expect("password reset token should be created");
+
+        reset_password(
+            &pool,
+            ResetPasswordRequest {
+                token: raw_token.to_string(),
+                new_password: "NewPassword123".to_string(),
+            },
+        )
+        .await
+        .expect("first reset password should succeed");
+
+        let error = reset_password(
+            &pool,
+            ResetPasswordRequest {
+                token: raw_token.to_string(),
+                new_password: "AnotherPassword123".to_string(),
+            },
+        )
+        .await
+        .expect_err("used token should be rejected");
+
+        let (status, body) = error_response_json(error).await;
+
+        assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(body["message"], "入力内容が不正です。");
+        assert_eq!(
+            body["details"],
+            serde_json::json!(["再設定リンクが無効、または有効期限切れです。"])
+        );
+    }
+}

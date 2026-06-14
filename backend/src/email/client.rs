@@ -93,4 +93,18 @@ impl EmailClient {
 
         Ok(())
     }
+
+    #[cfg(test)]
+    pub fn new_for_tests() -> Self {
+        let from = "no-reply@household-budget.local"
+            .parse()
+            .expect("test from address should be valid");
+
+        Self {
+            mailer: AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous("127.0.0.1")
+                .port(1025)
+                .build(),
+            from: Mailbox::new(Some("家計簿アプリ".to_string()), from),
+        }
+    }
 }

@@ -91,8 +91,8 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        models::user::UserRow, repositories::user as user_repository, security::jwt,
-        state::AppState,
+        email::EmailClient, models::user::UserRow, repositories::user as user_repository,
+        security::jwt, state::AppState,
     };
 
     const TEST_JWT_SECRET: &str = "test-jwt-secret";
@@ -111,6 +111,7 @@ mod tests {
             db: pool,
             jwt_secret: TEST_JWT_SECRET.to_string(),
             frontend_url: "http://127.0.0.1:5173".to_string(),
+            email_client: EmailClient::new_for_tests(),
         });
 
         (
