@@ -69,8 +69,6 @@ async fn main() {
     let frontend_url = env::var("FRONTEND_URL").expect("FRONTEND_URL must be set");
     let email_client = EmailClient::from_env().expect("failed to initialize email client");
 
-    let frontend_url = env::var("FRONTEND_URL").expect("FRONTEND_URL must be set");
-
     let backend_host = env::var("BACKEND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let backend_port = env::var("BACKEND_PORT").unwrap_or_else(|_| "8080".to_string());
     let server_addr = format!("{}:{}", backend_host, backend_port);
